@@ -1,4 +1,4 @@
-.PHONY: doc detect config reconfig toolchain sub-mods final-out env
+.PHONY: doc detect config reconfig toolchain sub-mods final-out env help
 
 all: detect config toolchain sub-mods final-out
 	$(TOP_Q) \
@@ -6,6 +6,7 @@ all: detect config toolchain sub-mods final-out
 	    $(RECURSIVE_MAKE) toolchain; \
 	    rm -f $(STAMP_PRJ_CFG); \
 	fi
+	@rm -rf $(STAMP_DIR)
 
 RESET_ENV_VARS := \
     CROSS_PREFIX \
@@ -13,10 +14,16 @@ RESET_ENV_VARS := \
     HOST \
     LDFLAGS \
 
+help:
+	@echo -e "\033[1;37m[$(RULE_DIR)/docs]\e[0m"
+	@echo ""
+	@cat $(RULE_DIR)/docs/Help.md
+	@echo ""
+
 doc:
 	$(TOP_Q)rm -rf html
 	$(TOP_Q) \
-	sed \
+	$(SED) \
 	    's:^PROJECT_NAME.*:PROJECT_NAME = $(PRJ_NAME):g; s:^PROJECT_NUMBER.*:PROJECT_NUMBER = $(PRJ_VERSION):g' \
 	build-rules/misc/Doxyfile.tpl > $(OUTPUT_DIR)/.doxygen.cfg
 	$(TOP_Q)doxygen $(OUTPUT_DIR)/.doxygen.cfg
@@ -29,7 +36,17 @@ detect:
 	    done; \
 	fi
 
-#	@for i in $$(grep "^ *include" $(TOP_DIR)/$(TOP_MAKEFILE)|awk '{ print $$NF }'|sed '/^\$$/d'); do \
+unzip: config $(STAMP_BLD_VAR)
+	@echo "Components: "
+	@echo ""
+	@for i in $(ALL_SUB_DIRS); do \
+	    $(MAKE) --no-print-directory pre-build target-$${i} ; \
+	    echo -ne "\r. $${i}"; \
+	    echo -e "                                          "; \
+	done
+	@echo ""
+
+#	@for i in $$(grep "^ *include" $(TOP_DIR)/$(TOP_MAKEFILE)|awk '{ print $$NF }'|$(SED) '/^\$$/d'); do \
 #	    if [ $$i -nt $(CONFIG_TPL) ]; then \
 #	        echo "Re-configure project since '$${i}' updated"|grep --color ".*"; \
 #	        $(RECURSIVE_MAKE) reconfig; \
@@ -43,12 +60,12 @@ detect:
 
 config:
 
-	@mkdir -p $(OUTPUT_DIR) $(INSTALL_DIR)
+	@mkdir -p $(OUTPUT_DIR) $(STAMP_DIR) $(INSTALL_DIR)
 	@mkdir -p $(SYSROOT_BIN) $(SYSROOT_INC) $(SYSROOT_LIB)
 
 	$(TOP_Q) \
 	if [ -f $(STAMP_BLD_VAR) ]; then \
-	    if [ "$$(sed '/[-_/a-zA-Z0-9]* = ..*/d' $(STAMP_BLD_VAR)|wc -l)" != "0" ]; then \
+	    if [ "$$($(SED) '/[-_/a-zA-Z0-9]* = ..*/d' $(STAMP_BLD_VAR)|wc -l|$(SED) 's:^  *::g')" != "0" ]; then \
 	        rm -f $(STAMP_BLD_VAR); \
 	    fi \
 	fi
@@ -62,7 +79,8 @@ config:
 	        echo ""; \
 	    fi \
 	else \
-	    if [ "$(DEFAULT_BLD)" != "" ] && [ -f $(DEFAULT_BLD) ]; then \
+	    if [ "$(DEFAULT_BLD)" != "" ] && [ -f $(DEFAULT_BLD) ] && \
+	       ([ "$(DEFAULT_BLD)" = "$(RULE_DIR)/misc/config.generic.default" ] || [ "$(MAKECMDGOALS)" = "" ]); then \
 	        printf "# Automatically Generated Section End\n\n" >> $(CONFIG_TPL); \
 	        printf "# %-10s %s\n" "VENDOR :" $$(basename $(DEFAULT_BLD)|cut -d. -f2) >> $(CONFIG_TPL); \
 	        printf "# %-10s %s\n" "MODEL  :" $$(basename $(DEFAULT_BLD)|cut -d. -f3) >> $(CONFIG_TPL); \
@@ -90,29 +108,49 @@ config:
 	        fi; \
 	    fi; \
 	    for i in $(RESET_ENV_VARS); do unset $${i}; done; \
-	    $(MAKE) --no-print-directory -f $(TOP_MAKEFILE) $(STAMP_BLD_VAR); \
+	    $(MAKE) --no-print-directory -f $(TOP_MAKEFILE) $(STAMP_BLD_VAR) unzip; \
 	fi)
 
-toolchain: VSP_TARBALL = $(OUTPUT_DIR)/$(shell $(SHELL_DBG) basename $(CONFIG_TOOLCHAIN_RPATH))
+toolchain: VSP_TARBALL = $(shell $(SHELL_DBG) basename $(CONFIG_TOOLCHAIN_RPATH))
 toolchain: config
 ifneq ($(CONFIG_TOOLCHAIN_NAME),)
+ifeq (,$(CONFIG_TOOLCHAIN_RPATH))
+	@echo "Error! CONFIG_TOOLCHAIN_NAME defined, but CONFIG_TOOLCHAIN_RPATH undefined!" && exit 1
+else
 	$(TOP_Q) \
+( \
 	if [ -e $(OUTPUT_DIR)/$(CONFIG_TOOLCHAIN_NAME) ]; then \
-	    true; \
-	else \
-	    if [ "$(CONFIG_CACHED_TOOLCHAIN)" != "" ] && [ -d $(CONFIG_CACHED_TOOLCHAIN) ]; then \
-	        ln -sf $(CONFIG_CACHED_TOOLCHAIN) $(OUTPUT_DIR)/$(CONFIG_TOOLCHAIN_NAME); \
-	    else \
-	        echo "Downloading ToolChain ..." && \
-	        wget -O $(VSP_TARBALL) $(CONFIG_VSP_WEBSITE)/$(CONFIG_TOOLCHAIN_RPATH) && \
-	        echo "De-compressing ToolChain ..." && \
-	        tar xf $(VSP_TARBALL) -C $(OUTPUT_DIR); \
-	    fi \
-	fi
+	    exit 0; \
+	fi; \
+\
+	if [ ! -d /tmp/$(CONFIG_TOOLCHAIN_NAME) -a -f /tmp/$(VSP_TARBALL) ]; then \
+	    echo "De-compressing Cached ToolChain ..." && \
+	    tar xf /tmp/$(VSP_TARBALL) -C /tmp; \
+	fi; \
+	if [ -d /tmp/$(CONFIG_TOOLCHAIN_NAME) ]; then \
+	    echo "Using Cached ToolChain ..." && \
+	    ln -sf /tmp/$(CONFIG_TOOLCHAIN_NAME) $(OUTPUT_DIR)/$(CONFIG_TOOLCHAIN_NAME); \
+	    exit 0; \
+	fi; \
+\
+	echo "Downloading ToolChain ..." && \
+	wget -O $(OUTPUT_DIR)/$(VSP_TARBALL) $(CONFIG_VSP_WEBSITE)/$(CONFIG_TOOLCHAIN_RPATH) && \
+	echo "De-compressing ToolChain ..." && \
+	tar xf $(OUTPUT_DIR)/$(VSP_TARBALL) -C $(OUTPUT_DIR); \
+	cp -f $(OUTPUT_DIR)/$(VSP_TARBALL) /tmp; \
+	rm -rf /tmp/$(CONFIG_TOOLCHAIN_NAME); \
+	tar xf /tmp/$(VSP_TARBALL) -C /tmp; \
+)
+endif
 endif
 
 reconfig: distclean
-	$(TOP_Q)+$(RECURSIVE_MAKE) config DEFAULT_BLD=not-exist-actually
+	$(TOP_Q)+( \
+	if [ -d $(CONFIG_DIR) ]; then \
+	    $(RECURSIVE_MAKE) config DEFAULT_BLD=not-exist-actually; \
+	else \
+	    $(RECURSIVE_MAKE) config; \
+	fi)
 	$(TOP_Q)rm -f $(STAMP_PRJ_CFG)
 
 clean:
@@ -128,6 +166,7 @@ clean:
 	        $(LIBOBJ_TMPDIR) \
 	        $(COMPILE_LOG) \
 	        $(DIST_DIR)/* \
+	        $(STAMP_DIR) \
 	        $(SYSROOT_INC)/* $(SYSROOT_LIB)/* $(SYSROOT_LIB)/../bin/* \
 	        $(shell $(SHELL_DBG) find $(OUTPUT_DIR) -name "$(COMPILE_LOG)" \
 	                             -o -name "$(WARNING_LOG)" \
@@ -141,7 +180,7 @@ distclean:
 	rm -rf \
 	    $(CONFIG_TPL) $(COMPILE_LOG) \
 	    $(STAMP_PRJ_CFG) $(STAMP_BLD_ENV) $(STAMP_BLD_VAR) $(STAMP_POST_RULE) \
-	    $(DIST_DIR) \
+	    $(DIST_DIR) $(STAMP_DIR) \
 
 	$(TOP_Q) \
 	if [ -d $(OUTPUT_DIR) ]; then \

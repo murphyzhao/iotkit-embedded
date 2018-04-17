@@ -3,14 +3,26 @@
 SHELL           := /bin/bash
 TOP_DIR         ?= $(CURDIR)
 
-# Settings of input directory
+ifeq (Darwin,$(strip $(shell uname)))
+SED             := gsed
+STRIP_DBGOPT    :=
+else
+SED             := sed
+STRIP_DBGOPT    := --strip-debug
+endif
+
+# Settings of input directory and file
 #
 RULE_DIR        ?= $(TOP_DIR)/build-rules
 CONFIG_DIR      ?= $(TOP_DIR)/configs
 SCRIPT_DIR      ?= $(TOP_DIR)/scripts
 PACKAGE_DIR     ?= $(TOP_DIR)/packages
 IMPORT_DIR      ?= $(TOP_DIR)/import
-DEFAULT_BLD     ?= $(RULE_DIR)/misc/config.generic.default
+MAKE_SEGMENT    ?= iot.mk
+
+ifeq ($(shell [ ! -d $(CONFIG_DIR) ] && echo y),y)
+DEFAULT_BLD     := $(RULE_DIR)/misc/config.generic.default
+endif
 
 # Settings of project information
 PRJ_NAME        ?= LITE-build.prj
@@ -36,7 +48,6 @@ COMPILE_LOG     := compile.log
 WARNING_LOG     := warnings.log
 HD_MAKEFILE     := makefile
 TOP_MAKEFILE    := makefile
-MAKE_SEGMENT    := iot.mk
 
 STAMP_PRJ_CFG   := $(OUTPUT_DIR)/.just.configured
 STAMP_BLD_ENV   := $(OUTPUT_DIR)/.sub-build.env
@@ -48,6 +59,7 @@ STAMP_INSTALL   := .install.done
 STAMP_POSTINS   := .post.install.done
 STAMP_SHIELD    := .shield.done
 STAMP_POST_RULE := $(OUTPUT_DIR)/.post-rules.mk
+STAMP_DIR       := $(OUTPUT_DIR)/stamps
 
 ifdef DEBUG
 AUTO_HEADER_Q   :=

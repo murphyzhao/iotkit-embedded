@@ -25,11 +25,11 @@
 #include "iot_import.h"
 #include "iot_export.h"
 
-#if defined(MQTT_ID2_AUTH) && defined(TEST_ID2_DAILY)
-    #define PRODUCT_KEY             "OvNmiEYRDSY"
+#if defined(MQTT_ID2_AUTH) && defined(ON_DAILY)
+    #define PRODUCT_KEY             "9rx2yMNV5l0"
     #define DEVICE_NAME             "sh_online_sample_mqtt"
     #define DEVICE_SECRET           "v9mqGzepKEphLhXmAoiaUIR2HZ7XwTky"
-#elif defined(TEST_MQTT_DAILY)
+#elif defined(ON_DAILY)
     #define PRODUCT_KEY             "gsYfsxQJgeD"
     #define DEVICE_NAME             "DailyEnvDN"
     #define DEVICE_SECRET           "y1vzFkEgcuXnvkAfm627pwarx4HRNikX"
@@ -43,11 +43,21 @@
     #define DEVICE_SECRET           "fSCl9Ns5YPnYN8Ocg0VEel1kXFnRlV6c"
 #endif
 
+char __product_key[PRODUCT_KEY_LEN + 1];
+char __device_name[DEVICE_NAME_LEN + 1];
+char __device_secret[DEVICE_SECRET_LEN + 1];
+
 /* These are pre-defined topics */
 #define TOPIC_UPDATE            "/"PRODUCT_KEY"/"DEVICE_NAME"/update"
 #define TOPIC_ERROR             "/"PRODUCT_KEY"/"DEVICE_NAME"/update/error"
 #define TOPIC_GET               "/"PRODUCT_KEY"/"DEVICE_NAME"/get"
 #define TOPIC_DATA              "/"PRODUCT_KEY"/"DEVICE_NAME"/data"
+
+/* These are pre-defined topics format*/
+#define TOPIC_UPDATE_FMT            "/%s/%s/update"
+#define TOPIC_ERROR_FMT             "/%s/%s/update/error"
+#define TOPIC_GET_FMT               "/%s/%s/get"
+#define TOPIC_DATA_FMT              "/%s/%s/data"
 
 #define MQTT_MSGLEN             (1024)
 
@@ -139,6 +149,7 @@ static void _demo_message_arrive(void *pcontext, void *pclient, iotx_mqtt_event_
 
     /* print topic name and topic message */
     EXAMPLE_TRACE("----");
+    EXAMPLE_TRACE("packetId: %d", ptopic_info->packet_id);
     EXAMPLE_TRACE("Topic: '%.*s' (Length: %d)",
                   ptopic_info->topic_len,
                   ptopic_info->ptopic,
@@ -150,6 +161,7 @@ static void _demo_message_arrive(void *pcontext, void *pclient, iotx_mqtt_event_
     EXAMPLE_TRACE("----");
 }
 
+#ifndef MQTT_ID2_AUTH
 int mqtt_client(void)
 {
     int rc = 0, msg_len, cnt = 0;
@@ -172,8 +184,12 @@ int mqtt_client(void)
         goto do_exit;
     }
 
+    HAL_GetProductKey(__product_key);
+    HAL_GetDeviceName(__device_name);
+    HAL_GetDeviceSecret(__device_secret);
+
     /* Device AUTH */
-    if (0 != IOT_SetupConnInfo(PRODUCT_KEY, DEVICE_NAME, DEVICE_SECRET, (void **)&pconn_info)) {
+    if (0 != IOT_SetupConnInfo(__product_key, __device_name, __device_secret, (void **)&pconn_info)) {
         EXAMPLE_TRACE("AUTH request failed!");
         rc = -1;
         goto do_exit;
@@ -209,6 +225,26 @@ int mqtt_client(void)
         goto do_exit;
     }
 
+    /* Initialize topic information */
+    memset(&topic_msg, 0x0, sizeof(iotx_mqtt_topic_info_t));
+    strcpy(msg_pub, "update: hello! start!");
+
+    topic_msg.qos = IOTX_MQTT_QOS1;
+    topic_msg.retain = 0;
+    topic_msg.dup = 0;
+    topic_msg.payload = (void *)msg_pub;
+    topic_msg.payload_len = strlen(msg_pub);
+
+    rc = IOT_MQTT_Publish(pclient, TOPIC_UPDATE, &topic_msg);
+    if (rc < 0) {
+        IOT_MQTT_Destroy(&pclient);
+        EXAMPLE_TRACE("error occur when publish");
+        rc = -1;
+        goto do_exit;
+    }
+
+    EXAMPLE_TRACE("\n publish message: \n topic: %s\n payload: \%s\n rc = %d", TOPIC_UPDATE, topic_msg.payload, rc);
+    
     /* Subscribe the specific topic */
     rc = IOT_MQTT_Subscribe(pclient, TOPIC_DATA, IOTX_MQTT_QOS1, _demo_message_arrive, NULL);
     if (rc < 0) {
@@ -218,12 +254,10 @@ int mqtt_client(void)
         goto do_exit;
     }
 
-    HAL_SleepMs(1000);
-
     /* Initialize topic information */
+    memset(msg_pub, 0x0, 128);
+    strcpy(msg_pub, "data: hello! start!");
     memset(&topic_msg, 0x0, sizeof(iotx_mqtt_topic_info_t));
-    strcpy(msg_pub, "message: hello! start!");
-
     topic_msg.qos = IOTX_MQTT_QOS1;
     topic_msg.retain = 0;
     topic_msg.dup = 0;
@@ -231,7 +265,9 @@ int mqtt_client(void)
     topic_msg.payload_len = strlen(msg_pub);
 
     rc = IOT_MQTT_Publish(pclient, TOPIC_DATA, &topic_msg);
-    EXAMPLE_TRACE("rc = IOT_MQTT_Publish() = %d", rc);
+    EXAMPLE_TRACE("\n publish message: \n topic: %s\n payload: \%s\n rc = %d", TOPIC_DATA, topic_msg.payload, rc);
+
+    IOT_MQTT_Yield(pclient, 200);
 
     do {
         /* Generate topic message */
@@ -271,10 +307,12 @@ int mqtt_client(void)
         }
 
     } while (cnt < 1);
+        
+    IOT_MQTT_Yield(pclient, 200);
 
     IOT_MQTT_Unsubscribe(pclient, TOPIC_DATA);
 
-    HAL_SleepMs(200);
+    IOT_MQTT_Yield(pclient, 200);
 
     IOT_MQTT_Destroy(&pclient);
 
@@ -289,8 +327,11 @@ do_exit:
 
     return rc;
 }
+#endif /* MQTT_ID2_AUTH */
 
 #ifdef MQTT_ID2_AUTH
+#include "tfs.h"
+char __device_id2[TFS_ID2_LEN + 1];
 int mqtt_client_secure()
 {
     int rc = 0, msg_len, cnt = 0;
@@ -300,6 +341,10 @@ int mqtt_client_secure()
     iotx_mqtt_topic_info_t topic_msg;
     char msg_pub[128];
     char *msg_buf = NULL, *msg_readbuf = NULL;
+    char  topic_update[IOTX_URI_MAX_LEN] = {0};
+    char  topic_error[IOTX_URI_MAX_LEN] = {0};
+    char  topic_get[IOTX_URI_MAX_LEN] = {0};
+    char  topic_data[IOTX_URI_MAX_LEN] = {0};
 
     if (NULL == (msg_buf = (char *)HAL_Malloc(MQTT_MSGLEN))) {
         EXAMPLE_TRACE("not enough memory");
@@ -313,12 +358,20 @@ int mqtt_client_secure()
         goto do_exit;
     }
 
+    HAL_GetProductKey(__product_key);
+    HAL_GetID2(__device_id2);
+
     /* Device AUTH */
-    rc = IOT_SetupConnInfoSecure(PRODUCT_KEY, DEVICE_NAME, DEVICE_SECRET, (void **)&pconn_info);
+    rc = IOT_SetupConnInfoSecure(__product_key, __device_id2, __device_id2, (void **)&pconn_info);
     if (rc != 0) {
         EXAMPLE_TRACE("AUTH request failed!");
         goto do_exit;
     }
+
+    HAL_Snprintf(topic_update,IOTX_URI_MAX_LEN,TOPIC_UPDATE_FMT,__product_key,__device_id2);
+    HAL_Snprintf(topic_error,IOTX_URI_MAX_LEN,TOPIC_ERROR_FMT,__product_key,__device_id2);
+    HAL_Snprintf(topic_get,IOTX_URI_MAX_LEN,TOPIC_GET_FMT,__product_key,__device_id2);
+    HAL_Snprintf(topic_data,IOTX_URI_MAX_LEN,TOPIC_DATA_FMT,__product_key,__device_id2);
 
     /* Initialize MQTT parameter */
     memset(&mqtt_params, 0x0, sizeof(mqtt_params));
@@ -350,7 +403,7 @@ int mqtt_client_secure()
     }
 
     /* Subscribe the specific topic */
-    rc = IOT_MQTT_Subscribe(pclient, TOPIC_DATA, IOTX_MQTT_QOS1, _demo_message_arrive, NULL);
+    rc = IOT_MQTT_Subscribe(pclient, topic_data, IOTX_MQTT_QOS1, _demo_message_arrive, NULL);
     if (rc < 0) {
         IOT_MQTT_Destroy(&pclient);
         EXAMPLE_TRACE("IOT_MQTT_Subscribe() failed, rc = %d", rc);
@@ -370,7 +423,7 @@ int mqtt_client_secure()
     topic_msg.payload = (void *)msg_pub;
     topic_msg.payload_len = strlen(msg_pub);
 
-    rc = IOT_MQTT_Publish(pclient, TOPIC_DATA, &topic_msg);
+    rc = IOT_MQTT_Publish(pclient, topic_data, &topic_msg);
     EXAMPLE_TRACE("rc = IOT_MQTT_Publish() = %d", rc);
 
     do {
@@ -386,7 +439,7 @@ int mqtt_client_secure()
         topic_msg.payload = (void *)msg_pub;
         topic_msg.payload_len = msg_len;
 
-        rc = IOT_MQTT_Publish(pclient, TOPIC_DATA, &topic_msg);
+        rc = IOT_MQTT_Publish(pclient, topic_data, &topic_msg);
         if (rc < 0) {
             EXAMPLE_TRACE("error occur when publish");
             rc = -1;
@@ -426,7 +479,7 @@ do_exit:
     return rc;
 
 }
-#endif
+#endif /* MQTT_ID2_AUTH*/
 
 int main(int argc, char **argv)
 {
@@ -435,6 +488,10 @@ int main(int argc, char **argv)
 
     user_argc = argc;
     user_argv = argv;
+    HAL_SetProductKey(PRODUCT_KEY);
+    HAL_SetDeviceName(DEVICE_NAME);
+    HAL_SetDeviceSecret(DEVICE_SECRET);
+
 #ifndef MQTT_ID2_AUTH
     mqtt_client();
 #else

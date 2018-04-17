@@ -6,7 +6,7 @@ sub-mods: toolchain
 	if [ -f $(STAMP_PRJ_CFG) ]; then true; else \
 	    set -o pipefail; \
 	    for i in \
-	        $$(echo $(IMPORT_DIR)|sed 's:$(TOP_DIR)/*::g')/$(CONFIG_VENDOR)/platform \
+	        $$(echo $(IMPORT_DIR)|$(SED) 's:$(TOP_DIR)/*::g')/$(CONFIG_VENDOR)/platform \
 	        $(SUBDIRS); do \
 	            if [ ! -d $${i} ]; then continue; fi; \
 	            $(MAKE) --no-print-directory Q=$(Q) $${i} 2>&1 $(SUB_LOG_OPTION); \
@@ -17,6 +17,7 @@ sub-mods: toolchain
 
 SUB_BUILD_VARS := \
     CFLAGS LDFLAGS \
+    PACKAGE_DIR \
     IMPORT_DIR \
     TOP_DIR \
     RULE_DIR \
@@ -48,17 +49,17 @@ CMDLINE_VARS := \
 #
 $(STAMP_BLD_ENV): $(TOP_DIR)/makefile $(shell ls $(CONFIG_TPL) 2>/dev/null) \
                   $(wildcard $(RULE_DIR)/*.mk) \
-                  $(shell grep "^ *include" $(TOP_DIR)/$(TOP_MAKEFILE)|awk '{ print $$NF }'|sed '/^\$$/d')
+                  $(shell grep "^ *include" $(TOP_DIR)/$(TOP_MAKEFILE)|awk '{ print $$NF }'|$(SED) '/^\$$/d')
 	@rm -f $@
 	@$(foreach V, \
 	    $(sort $(SUB_BUILD_VARS)), \
-	        echo "$(V) := $(sort $($(V)))"|sed 's:\$$:$$$$:g' >> $(STAMP_BLD_ENV); \
+	        echo "$(V) := $(sort $($(V)))"|$(SED) 's:\$$:$$$$:g' >> $(STAMP_BLD_ENV); \
 	)
 
 # note:
-#   sed -i "/CONFIG_$${i//\//\\/}.*/d" $(CONFIG_TPL);
+#   $(SED) -i "/CONFIG_$${i//\//\\/}.*/d" $(CONFIG_TPL);
 # above
-#   sed -i "1iCONFIG_$${i} = y" $(CONFIG_TPL)
+#   $(SED) -i "1iCONFIG_$${i} = y" $(CONFIG_TPL)
 # was removed since modules will be skipped in some cases
 
 $(STAMP_BLD_VAR): $(foreach d,$(ALL_SUB_DIRS),$(d)/$(MAKE_SEGMENT)) $(STAMP_BLD_ENV) $(wildcard $(RULE_DIR)/*.mk)
@@ -71,8 +72,8 @@ $(STAMP_BLD_VAR): $(foreach d,$(ALL_SUB_DIRS),$(d)/$(MAKE_SEGMENT)) $(STAMP_BLD_
 	        if [ ! -L $${i} ]; then \
 	            printf "CONFIGURE .............................. [%s]\n" $${i}; \
 	        fi; \
-	        sed -i "1iCONFIG_$${i} = y" $(CONFIG_TPL); \
-	        [ -f $(STAMP_POST_RULE) ] && sed -i "/target-$${i//\//\\/}.*/d" $(STAMP_POST_RULE) || true; \
+	        $(SED) -i "1iCONFIG_$${i} = y" $(CONFIG_TPL); \
+	        [ -f $(STAMP_POST_RULE) ] && $(SED) -i "/target-$${i//\//\\/}.*/d" $(STAMP_POST_RULE) || true; \
 	        echo "target-$${i}:; @true" >> $(STAMP_POST_RULE); \
 	    fi; \
 	    $(foreach V, $(CMDLINE_VARS), $(V)="$($(V))") \
@@ -96,9 +97,13 @@ $(STAMP_BLD_VAR): $(foreach d,$(ALL_SUB_DIRS),$(d)/$(MAKE_SEGMENT)) $(STAMP_BLD_
 
 pre-build: MOD = $(subst target-,,$(filter-out $@,$(MAKECMDGOALS)))
 pre-build: $(STAMP_BLD_ENV)
+	$(TOP_Q)rm -f $(OUTPUT_DIR)/$(MOD)/$(STAMP_UNPACK)
 	$(if $(filter 0,$(MAKELEVEL)),,@) \
 	$(strip $(foreach V, $(CMDLINE_VARS), $(V)="$($(V))") \
 	    PKG_SOURCE="$(PKG_SOURCE_$(MOD))" \
+	    PKG_BRANCH="$(PKG_BRANCH_$(MOD))" \
+	    PKG_REVISION="$(PKG_REVISION_$(MOD))" \
+	    PKG_UPSTREAM="$(PKG_UPSTREAM_$(MOD))" \
 	    PKG_SWITCH="$(PKG_SWITCH_$(MOD))" \
 	) \
 	$(if $(filter 0,$(MAKELEVEL)),VERBOSE_PRE_BLD=1) \
@@ -116,21 +121,10 @@ ifeq (0,$(MAKELEVEL))
 	$(TOP_Q)$(MAKE) --no-print-directory -C $(OUTPUT_DIR)/$@ clean
 endif
 	$(TOP_Q) \
-	if [ "$$(echo $(PKG_SWITCH_$@))" != "" ]; then \
-	    if [ "$$(echo $(DEPENDS_$@))" != "" ]; then \
-	        if  [ ! -f $(IMPORT_VDRDIR)/$(PREBUILT_LIBDIR)/lib$(shell basename $@).a ] && \
-	            [ ! -f $(IMPORT_VDRDIR)/$(PREBUILT_LIBDIR)/lib$(shell basename $@).so ]; then \
-	            for i in $(DEPENDS_$@); do \
-	                $(MAKE) --no-print-directory $${i} \
-	                    $(if $(Q),,2>&1|tee -a $(OUTPUT_DIR)/$${i}/$(COMPILE_LOG)) \
-	                    $(ALL_LOG_OPT); \
-	                RETVAL=$$?; \
-	                if [ $${RETVAL} != 0 ]; then exit $${RETVAL}; fi; \
-	            done \
-	        fi \
-	    fi && \
-	    $(call Build_CompLib, $@) && \
-	    $(call Update_Extra_Srcs, $(EXTRA_SRCS_$@),$@) && \
+	if [ "$$( $(call Require_Build,$@) )" = "TRUE" ]; then \
+	    $(call Build_Depends,$@) && \
+	    $(call Build_CompLib,$@) && \
+	    $(call Update_Extra_Srcs,$(EXTRA_SRCS_$@),$@) && \
 	    $(MAKE) --no-print-directory -C $(OUTPUT_DIR)/$@ all $(SUB_LOG_OPT) $(ALL_LOG_OPT) && \
 	    if [ "$$(echo $(ORIGIN_$@))" != "" ]; then \
 	        touch $(OUTPUT_DIR)/$@/{$(STAMP_UNPACK),$(STAMP_CONFIG),$(STAMP_BUILD),$(STAMP_INSTALL)}; \
@@ -139,3 +133,4 @@ endif
 	    echo -ne "\r$$(printf '%40s' '')\r"; \
 	fi
 
+	@mkdir -p $(STAMP_DIR) && touch $(STAMP_DIR)/$$(echo "$@"|$(SED) 's:/:~:g').build.done

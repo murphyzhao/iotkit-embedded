@@ -84,8 +84,8 @@ typedef enum {
     IOT_OTAG_FILE_SIZE,        /* size of file */
     IOT_OTAG_MD5SUM,           /* md5 in string format */
     IOT_OTAG_VERSION,          /* version in string format */
-    IOT_OTAG_CHECK_FIRMWARE    /* Check firmware is valid or not */
-
+    IOT_OTAG_CHECK_FIRMWARE,    /* Check firmware is valid or not */
+    IOT_OTAG_CHECK_CONFIG       /* Check config file is valid or not */
 } IOT_OTA_CmdType_t;
 
 /** @defgroup group_api api
@@ -139,6 +139,20 @@ int IOT_OTA_ReportVersion(void *handle, const char *version);
 
 
 /**
+ * @brief Request firmware image from cloud.
+ *        
+ *
+ * @param [in] handle: specify the OTA module.
+ * @param [in] version: specify the firmware version in string format.
+ *
+ * @retval   0 : Successful.
+ * @retval < 0 : Failed, the value is error code.
+ * @see None.
+ */
+int IOT_OTA_RequestImage(void *handle, const char *version);
+
+
+/**
  * @brief Report detail progress to OTA server (optional).
  *        NOTE: please
  *
@@ -151,6 +165,23 @@ int IOT_OTA_ReportVersion(void *handle, const char *version);
  * @see None.
  */
 int IOT_OTA_ReportProgress(void *handle, IOT_OTA_Progress_t progress, const char *msg);
+
+
+
+/**
+ * @brief Report detail progress to OTA server (optional).
+ *        NOTE: please
+ *
+ * @param [in] handle: specify the OTA module.
+ * @param [in] configScope: product or device.
+ * @param [in] getType: file or other.
+ * @param [in] attributeKeys: attribute key.
+ *
+ * @retval   0 : Successful.
+ * @retval < 0 : Failed, the value is error code.
+ * @see None.
+ */
+int IOT_OTA_GetConfig(void *handle, const char* configScope, const char* getType, const char* attributeKeys);
 
 
 /**

@@ -31,10 +31,11 @@
 
 #define HTTPCLIENT_AUTHB_SIZE     128
 
-#define HTTPCLIENT_CHUNK_SIZE     1024
-#define HTTPCLIENT_SEND_BUF_SIZE  1024
+#define HTTPCLIENT_CHUNK_SIZE     1024          /* read payload */
+#define HTTPCLIENT_RAED_HEAD_SIZE 32            /* read header */
+#define HTTPCLIENT_SEND_BUF_SIZE  1024          /* send */
 
-#define HTTPCLIENT_MAX_HOST_LEN   64
+#define HTTPCLIENT_MAX_HOST_LEN   128
 #define HTTPCLIENT_MAX_URL_LEN    1024
 
 #define HTTP_RETRIEVE_MORE_DATA   (1)            /**< More data needs to be retrieved. */
@@ -428,7 +429,9 @@ int httpclient_retrieve_content(httpclient_t *client, char *data, int len,
 
     client_data->is_more = IOT_TRUE;
 
+    /* the header is not received finished */
     if (client_data->response_content_len == -1 && client_data->is_chunked == IOT_FALSE) {
+        /* can not enter this if */
         while (1) {
             int ret, max_len;
             if (count + len < client_data->response_buf_len - 1) {
@@ -441,7 +444,8 @@ int httpclient_retrieve_content(httpclient_t *client, char *data, int len,
                 return HTTP_RETRIEVE_MORE_DATA;
             }
 
-            max_len = HTTPCLIENT_MIN(HTTPCLIENT_CHUNK_SIZE - 1, client_data->response_buf_len - 1 - count);
+            /* try to read more header */
+            max_len = HTTPCLIENT_MIN(HTTPCLIENT_RAED_HEAD_SIZE, client_data->response_buf_len - 1 - count);
             ret = httpclient_recv(client, data, 1, max_len, &len, iotx_time_left(&timer));
 
             /* Receive data */
@@ -598,12 +602,22 @@ int httpclient_response_parse(httpclient_t *client, char *data, int len, uint32_
     int crlf_pos;
     iotx_time_t timer;
     char *tmp_ptr, *ptr_body_end;
+    
+    int new_trf_len, ret;
 
     iotx_time_init(&timer);
     utils_time_countdown_ms(&timer, timeout_ms);
 
     client_data->response_content_len = -1;
 
+    /* http client response */
+    /* <status-line> HTTP/1.1 200 OK(CRLF)
+
+       <headers> ...(CRLF)
+
+       <blank line> (CRLF)
+
+      [<response-body>] */
     char *crlf_ptr = strstr(data, "\r\n");
     if (crlf_ptr == NULL) {
         log_err("\r\n not found");
@@ -632,25 +646,23 @@ int httpclient_response_parse(httpclient_t *client, char *data, int len, uint32_
     log_debug("Reading headers: %s", data);
 
     memmove(data, &data[crlf_pos + 2], len - (crlf_pos + 2) + 1); /* Be sure to move NULL-terminating char as well */
-    len -= (crlf_pos + 2);
+    len -= (crlf_pos + 2);       /* remove status_line length */
 
     client_data->is_chunked = IOT_FALSE;
 
-    /*If not ending of response body, try to get more data again */
-    if (NULL == (ptr_body_end = strstr(data, "\r\n\r\n"))) {
-        int new_trf_len, ret;
-        ret = httpclient_recv(client, data + len, 1, HTTPCLIENT_CHUNK_SIZE - len - 1, &new_trf_len, iotx_time_left(&timer));
+    /*If not ending of response body*/
+    /* try to read more header again until find response head ending "\r\n\r\n" */
+    while(NULL == (ptr_body_end = strstr(data, "\r\n\r\n"))) {
+        /* try to read more header */
+        ret = httpclient_recv(client, data + len, 1, HTTPCLIENT_RAED_HEAD_SIZE, &new_trf_len, iotx_time_left(&timer));
         if (ret == ERROR_HTTP_CONN) {
             return ret;
         }
         len += new_trf_len;
         data[len] = '\0';
-        if (NULL == (ptr_body_end = strstr(data, "\r\n\r\n"))) {
-            log_err("parse error: no end of the request body");
-            return -1;
-        }
     }
 
+    /* parse response_content_len */
     if (NULL != (tmp_ptr = strstr(data, "Content-Length"))) {
         client_data->response_content_len = atoi(tmp_ptr + strlen("Content-Length: "));
         client_data->retrieve_len = client_data->response_content_len;
@@ -668,9 +680,14 @@ int httpclient_response_parse(httpclient_t *client, char *data, int len, uint32_
         log_err("Could not parse header");
         return ERROR_HTTP;
     }
-
-    len = len - (ptr_body_end + 4 - data);
+    
+    /* remove header length */
+    /* len is Had read body's length */
+    /* if client_data->response_content_len != 0, it is know response length */
+    /* the remain length is client_data->response_content_len - len */
+    len = len - (ptr_body_end + 4 - data);   
     memmove(data, ptr_body_end + 4, len + 1);
+    client_data->response_received_len += len;
     return httpclient_retrieve_content(client, data, len, iotx_time_left(&timer), client_data);
 }
 
@@ -731,7 +748,8 @@ int httpclient_recv_response(httpclient_t *client, uint32_t timeout_ms, httpclie
         ret = httpclient_retrieve_content(client, buf, reclen, iotx_time_left(&timer), client_data);
     } else {
         client_data->is_more = 1;
-        ret = httpclient_recv(client, buf, 1, HTTPCLIENT_CHUNK_SIZE - 1, &reclen, iotx_time_left(&timer));
+        /* try to read header */
+        ret = httpclient_recv(client, buf, 1, HTTPCLIENT_RAED_HEAD_SIZE, &reclen, iotx_time_left(&timer));
         if (ret != 0) {
             return ret;
         }
@@ -768,7 +786,11 @@ int httpclient_common(httpclient_t *client, const char *url, int port, const cha
 
     if (0 == client->net.handle) {
         /* Establish connection if no. */
+#ifndef IOTX_NET_INIT_WITH_PK_EXT
         ret = iotx_net_init(&client->net, host, port, ca_crt);
+#else
+        ret = iotx_net_init(&client->net, host, port, ca_crt, NULL);
+#endif
         if (0 != ret) {
             return ret;
         }
@@ -779,13 +801,13 @@ int httpclient_common(httpclient_t *client, const char *url, int port, const cha
             httpclient_close(client);
             return ret;
         }
-    }
 
-    ret = httpclient_send_request(client, url, method, client_data);
-    if (0 != ret) {
-        log_err("httpclient_send_request is error, ret = %d", ret);
-        httpclient_close(client);
-        return ret;
+        ret = httpclient_send_request(client, url, method, client_data);
+        if (0 != ret) {
+            log_err("httpclient_send_request is error, ret = %d", ret);
+            httpclient_close(client);
+            return ret;
+        }
     }
 
     iotx_time_init(&timer);
@@ -801,7 +823,13 @@ int httpclient_common(httpclient_t *client, const char *url, int port, const cha
         }
     }
 
-    return 0;
+    if (! client_data->is_more) {
+        /* Close the HTTP if no more data. */
+        log_info("close http channel");
+        httpclient_close(client);
+    }
+
+    return (ret >= 0) ? 0 : -1;
 }
 
 int utils_get_response_code(httpclient_t *client)
@@ -824,7 +852,11 @@ int iotx_post(httpclient_t *client,
 
     if (0 == client->net.handle) {
         /* Establish connection if no. */
+#ifndef IOTX_NET_INIT_WITH_PK_EXT
         ret = iotx_net_init(&client->net, host, port, ca_crt);
+#else
+        ret = iotx_net_init(&client->net, host, port, ca_crt, NULL);
+#endif
         if (0 != ret) {
             return ret;
         }

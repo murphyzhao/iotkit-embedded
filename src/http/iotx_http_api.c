@@ -24,11 +24,9 @@
 #include "lite-utils.h"
 #include "utils_hmac.h"
 #include "utils_httpc.h"
-#include "ca.h"
 #include "utils_epoch_time.h"
 #include "sdk-impl_internal.h"
-#include "device.h"
-#include "report.h"
+#include "lite-system.h"
 
 /*
 #define IOTX_HTTP_TIMESTAMP_OPTIONAL_ENABLE
@@ -73,7 +71,9 @@
 #define IOTX_MD5_METHOD                     "hmacmd5"
 
 /* By default we use hmac-md5 algorithm for hmac in PK/DN/DS case */
+#ifndef USING_SHA1_IN_HMAC
 #define USING_SHA1_IN_HMAC      (1)
+#endif /* USING_SHA1_IN_HMAC */
 
 #define IOTX_HTTP_HEADER_KEEPALIVE_STR  "Connection: Keep-Alive\r\n"
 #define IOTX_HTTP_HEADER_PASSWORD_STR   "password:"
@@ -448,7 +448,7 @@ int IOT_HTTP_DeviceNameAuth(void *handle)
 
     log_debug("allocate req_payload: len = %d", len);
 
-    len = LITE_snprintf(req_payload, len + 1,
+    len = HAL_Snprintf(req_payload, len + 1,
                         IOTX_HTTP_AUTH_DEVICENAME_STR,
                         "default",
                         iotx_http_context->p_devinfo->device_id,

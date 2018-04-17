@@ -40,6 +40,7 @@ typedef enum _IOT_LogLevel {
 #define DEVICE_NAME_LEN     (32)
 #define DEVICE_ID_LEN       (64)
 #define DEVICE_SECRET_LEN   (64)
+#define PRODUCT_SECRET_LEN  (64)
 
 #define MODULE_VENDOR_ID    (32)    /* Partner ID */
 
@@ -169,6 +170,22 @@ int     IOT_SetupConnInfoSecure(const char *product_key,
 #include "exports/iot_export_coap.h"
 #include "exports/iot_export_ota.h"
 #include "exports/iot_export_http.h"
+#ifdef SUBDEVICE_ENABLED
+#include "exports/iot_export_subdev.h"
+#endif /* SUBDEVICE_ENABLED */
+#ifdef CLOUD_CONN_ENABLED
+#include "exports/iot_export_cloud_connection.h"
+#endif /* CLOUD_CONN_ENABLED */
+#ifdef CMP_ENABLED
+#include "exports/iot_export_cmp.h"
+#endif /* CMP_ENABLED */
+#ifdef DM_ENABLED
+#include "exports/iot_export_dm.h"
+#endif /* DM_ENABLED */
+//#ifdef SERVICE_OTA_ENABLED
+#include "exports/iot_export_fota.h"
+//#endif /* SERVICE_OTA_ENABLED */
+
 
 #if defined(__cplusplus)
 }

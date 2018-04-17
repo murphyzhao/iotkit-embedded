@@ -20,14 +20,14 @@
 #include <stdio.h>
 
 #include "iot_import.h"
-#include "iot_export.h"
+#include "iot_export_errno.h"
 
 #include "lite-utils.h"
 #include "utils_hmac.h"
 #include "json_parser.h"
 #include "CoAPMessage.h"
 #include "CoAPExport.h"
-#include "report.h"
+#include "lite-system.h"
 
 #define IOTX_SIGN_LENGTH         (40+1)
 #define IOTX_SIGN_SOURCE_LEN     (256)
@@ -48,7 +48,7 @@ typedef struct {
     int                  auth_token_len;
     char                 is_authed;
     iotx_deviceinfo_t   *p_devinfo;
-    CoAPContext          *p_coap_ctx;
+    CoAPContext         *p_coap_ctx;
     unsigned int         coap_token;
     iotx_event_handle_t  event_handle;
 } iotx_coap_t;
@@ -478,7 +478,7 @@ int IOT_CoAP_SendMessage(iotx_coap_context_t *p_context, char *p_path, iotx_mess
         CoAPMessageId_set(&message, CoAPMessageId_gen(p_coap_ctx));
         len = iotx_get_coap_token(p_iotx_coap, token);
         CoAPMessageToken_set(&message, token, len);
-        CoAPMessageUserData_set(&message, (void *)p_iotx_coap);
+        CoAPMessageUserData_set(&message, (void *)p_message->user_data);
         CoAPMessageHandler_set(&message, p_message->resp_callback);
 
         ret = iotx_split_path_2_option(p_path, &message);

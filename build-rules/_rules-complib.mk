@@ -9,12 +9,14 @@ define Finalize_CompLib
 endef
 define Info_CompLib
 ( \
-    echo -ne "\e[1;32m"; \
-    printf "\r%-32s%s\n" "[LD] lib$(1).so" "<= $(firstword $(2))"; \
-    for i in $(wordlist 2,100,$(2)); do \
-        printf "%-32s%s\n" "" "   $${i}"; \
+	EXIST_OBJS="$$(ls $(2) 2>/dev/null)"; \
+\
+    echo -ne "\033[1;32m"; \
+    printf "\r%-32s%s\n" "[AR] lib$(1).a" "<=      "; \
+    for i in $${EXIST_OBJS}; do \
+        printf "%-32s%s\n" "" "   $${i}"|$(SED) 's:$(LIBOBJ_TMPDIR)/::g'; \
     done; \
-    echo -ne "\e[0m"; \
+    echo -ne "\033[0m"; \
 )
 endef
 else
@@ -29,23 +31,25 @@ define Finalize_CompLib
 endef
 define Info_CompLib
 ( \
-    echo -ne "\e[1;35m"; \
-    printf "\r%-32s%s\n" "[AR] lib$(1).a" "<= $(firstword $(2))"; \
-    for i in $(wordlist 2,100,$(2)); do \
-        printf "%-32s%s\n" "" "   $${i}"; \
+	EXIST_OBJS="$$(ls $(2) 2>/dev/null)"; \
+\
+    echo -ne "\033[1;35m"; \
+    printf "\r%-32s%s\n" "[AR] lib$(1).a" "<=      "; \
+    for i in $${EXIST_OBJS}; do \
+        printf "%-32s%s\n" "" "   $${i}"|$(SED) 's:$(LIBOBJ_TMPDIR)/::g'; \
     done; \
-    echo -ne "\e[0m"; \
+    echo -ne "\033[0m"; \
 )
 endef
 endif # dynamic
 endif # COMP_LIB
 
-comp-lib: LIB_NAME = $(subst lib,,$(subst .so,,$(subst .a,,$(COMP_LIB))))
-comp-lib: LIB_OBJS = $(foreach d,$(COMP_LIB_COMPONENTS),$(LIBOBJ_TMPDIR)/$(d)/*.o)
-comp-lib: toolchain $(COMP_LIB_COMPONENTS)
-	$(Q) \
+comp-lib: toolchain
+ifdef COMP_LIB
+	$(TOP_Q)+( \
 	if [ -f $(STAMP_PRJ_CFG) ]; then true; else \
-	    $(call Info_CompLib,$(LIB_NAME),$(COMP_LIB_COMPONENTS)); \
-	    $(call Finalize_CompLib,$(LIB_OBJS),$(SYSROOT_LIB),$(LIB_NAME)); \
-	fi
-
+	    $(call Build_CompLib,FORCE) \
+	fi)
+else
+	$(Q)true
+endif

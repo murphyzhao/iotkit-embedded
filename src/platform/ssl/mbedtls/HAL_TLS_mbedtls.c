@@ -60,6 +60,7 @@ typedef struct _TLSDataParams {
 
 #define DEBUG_LEVEL 10
 
+
 static unsigned int _avRandom()
 {
     return (((unsigned int)rand() << 16) + rand());
@@ -304,6 +305,7 @@ static int mbedtls_net_connect_timeout(mbedtls_net_context *ctx, const char *hos
 }
 #endif
 
+
 /**
  * @brief This function connects to the specific SSL server with TLS, and returns a value that indicates whether the connection is create successfully or not. Call #NewNetwork() to initialize network structure before calling this function.
  * @param[in] n is the the network structure pointer.
@@ -547,18 +549,14 @@ uintptr_t HAL_SSL_Establish(const char *host,
     if (NULL == pTlsData) {
         return (uintptr_t)NULL;
     }
+    memset(pTlsData, 0x0, sizeof(TLSDataParams_t));
 
     sprintf(port_str, "%u", port);
 
     if (0 != _TLSConnectNetwork(pTlsData, host, port_str, ca_crt, ca_crt_len, NULL, 0, NULL, 0, NULL, 0)) {
-        mbedtls_x509_crt_free(&(pTlsData->cacertl));
-        mbedtls_x509_crt_free(&(pTlsData->clicert));
-        if (pTlsData->ssl.hostname) {
-            mbedtls_free(pTlsData->ssl.hostname);
-            pTlsData->ssl.hostname = NULL;
-        }
-        HAL_Free(pTlsData);
-        return 0;
+        _network_ssl_disconnect(pTlsData);
+        HAL_Free((void *)pTlsData);
+        return (uintptr_t)NULL; 
     }
 
     return (uintptr_t)pTlsData;

@@ -1,8 +1,8 @@
 define Dump_Var
 	NUM=`echo "$(strip $($(1)))"|awk '{ print NF }'`; \
-	if expr $${NUM} \> 1 >/dev/null; then \
+	if (( $${NUM} \> 1 )); then \
 	    printf -- "-----------------------------------------------------------------\n"; \
-	    printf "%-24s| %s\n" ". $(1)" `echo "$(strip $($(1)))"|cut -d' ' -f1|sed 's/^ *//'`; \
+	    printf "%-24s| %s\n" ". $(1)" `echo "$(strip $($(1)))"|cut -d' ' -f1|$(SED) 's/^ *//'`; \
 	    for i in `echo "$(strip $($(1)))"|cut -d' ' -f2-`; do \
 	        printf "%-24s| %s\n" "" "$${i}"; \
 	    done; \
@@ -29,36 +29,40 @@ endif
 
 # 31, red. 32, green. 33, yellow. 34, blue. 35, magenta. 36, cyan. 37, white.
 define Brief_Log
-	@if [ "$1" = "CC" ]; then \
+( \
+	if [ "$1" = "CC" ]; then \
 	    if echo "$@"|grep -q "\.so$$"; then \
-	        COLOR_MARK="\e[1;32m"; \
+	        COLOR_MARK="\033[1;32m"; \
 	    elif echo "$@"|grep -q "\.ko$$"; then \
-	        COLOR_MARK="\e[1;35m"; \
+	        COLOR_MARK="\033[1;35m"; \
 	    else \
-	        COLOR_MARK="\e[1;36m"; \
+	        COLOR_MARK="\033[1;36m"; \
 	    fi \
 	elif [ "$1" = "AR" ]; then \
-	    COLOR_MARK="\e[1;33m"; \
+	    COLOR_MARK="\033[1;33m"; \
 	elif [ "$1" = "LD" ]; then \
-	    COLOR_MARK="\e[1;31m"; \
+	    COLOR_MARK="\033[1;31m"; \
+	elif [ "$1" = "ST" ]; then \
+	    COLOR_MARK="\033[0;33m"; \
 	fi; \
-	echo -ne "$${COLOR_MARK}"
-	@if [ "$2" = "" ]; then \
+    echo -ne "$${COLOR_MARK}"; \
+	if [ "$2" = "" ]; then \
 	    FIRST_DEP="$(firstword $(filter-out FORCE,$?))"; \
 	    SPACE_BAR="                                   "; \
 	    if [ "$${FIRST_DEP}" != "" ]; then \
 	        FIRST_DEP="$$(basename $${FIRST_DEP})"; \
 	    fi; \
-	    printf "\r%-32s%s%s\n" "[$1] $$(expr substr $$(basename $@) 1 20)" "<= $${FIRST_DEP} $${SPACE_BAR}"; \
+	    printf "\r%-32s%s%s\n" "[$1] $$(echo -n "$$(basename $@)" | cut -c1-20)" "<= $${FIRST_DEP} $${SPACE_BAR}"; \
 	else \
-	    printf "\r%-32s%s%s\n" "[$1] $$(expr substr $(2) 1 20)" "<= $${FIRST_DEP} $${SPACE_BAR}"; \
-	fi
-	@for i in $(wordlist 2,100,$(filter-out FORCE,$?)); do \
+	    printf "\r%-32s%s%s\n" "[$1] $$(echo -n "$(2)" | cut -c1-20)" "<= $${FIRST_DEP} $${SPACE_BAR}"; \
+	fi; \
+	for i in $(wordlist 2,100,$(filter-out FORCE,$?)); do \
 	    if [ "$$(echo $${i}|cut -c1)" != "/" ]; then \
 	        printf "%-32s%s\n" "" "   $$(basename $${i})"; \
 	    fi \
-	done
-	@echo -ne "\e[0m"
+	done; \
+	echo -ne "\033[0m"; \
+)
 endef
 
 define Copy_Headers
@@ -85,6 +89,43 @@ define Update_Extra_Srcs
 )
 endef
 
+define Require_Build
+( \
+    [ "$(PKG_SWITCH_$(1))" != "y" ] && \
+        echo "FALSE" && exit; \
+\
+    [ "$(LIBA_TARGET_$(1))" != "" ] && \
+    $(foreach L,$(LIBA_TARGET_$(1)),[ -f $(IMPORT_VDRDIR)/$(PREBUILT_LIBDIR)/$(L) ] && ) \
+            echo "FALSE" && exit; \
+\
+    [ "$(LIBSO_TARGET_$(1))" != "" ] && \
+    [ -f $(IMPORT_VDRDIR)/$(PREBUILT_LIBDIR)/$(LIBSO_TARGET_$(1)) ] && \
+            echo "FALSE" && exit; \
+\
+    echo "TRUE"; \
+)
+endef
+
+define Build_Depends
+( \
+    set -o pipefail && \
+    for i in $(DEPENDS_$(1)); do \
+        STAMP=$(STAMP_DIR)/$$(echo $${i}|$(SED) 's:/:~:g').build.done; \
+        if [ -f $${STAMP} ]; then \
+            continue; \
+        fi; \
+        $(MAKE) --no-print-directory $${i} \
+            $(if $(Q),,2>&1|tee -a $(OUTPUT_DIR)/$${i}/$(COMPILE_LOG)) \
+            $(if $(Q),,2>&1|tee -a $(OUTPUT_DIR)/$(COMPILE_LOG)); \
+        RETVAL=$$?; \
+        if [ $${RETVAL} != 0 ]; then \
+            exit $${RETVAL}; \
+        fi; \
+    done \
+\
+)
+endef
+
 #
 #	    ($(foreach d,$(COMP_LIB_COMPONENTS), \
 #
@@ -96,30 +137,32 @@ endef
 #
 #	        if [ $$? != 0 ]; then \
 #
+# KEEP SEPA-LIBS:
+#
+# rm -f $(SYSROOT_LIB)/$(firstword $(LIBA_TARGET_$(d))) $(SYSROOT_LIB)/$(firstword $(LIBSO_TARGET_$(d))) 2>/dev/null; \
+#
 
 ifdef COMP_LIB
 define Build_CompLib
 ( \
-	if  [ "$(strip $(1))" = "FORCE" ] || \
-	    [ "$$(echo $(LDFLAGS_$(strip $(1)))|grep -wo -- '-l$(COMP_LIB_NAME)')" != "" ]; then \
-	    ($(foreach d,$(COMP_LIB_COMPONENTS), \
-	        $(MAKE) --no-print-directory $(d); \
-	        if [ $$? != 0 ]; then \
-	            echo -e "\rFailed to build $(LIBA_TARGET_$(d)) in $(d)"; \
-	            exit 10; \
-	        else \
-	            if [ "$(LIBA_TARGET_$(d))" != "" ]; then \
-	                rm -f $(SYSROOT_LIB)/$(LIBA_TARGET_$(d)); \
-	            fi; \
-	        fi; \
-	    )); \
-	    if  [ $$? != 0 ]; then \
-	        echo -e "\rFailed to build components for '$(COMP_LIB)'. Abort!"; \
-	        exit 11; \
-	    else \
-	        $(RECURSIVE_MAKE) comp-lib; \
-	    fi; \
-	fi \
+    if  [ "$(strip $(1))" = "FORCE" ] || \
+        [ "$$(echo $(LDFLAGS_$(strip $(1)))|grep -wo -- '-l$(COMP_LIB_NAME)')" != "" ]; then \
+    ( \
+        $(foreach d,$(COMP_LIB_COMPONENTS), \
+            [ -f $(STAMP_DIR)/$(subst /,~,$(d)).build.done ] || \
+            set -o pipefail && \
+            $(MAKE) --no-print-directory -C $(OUTPUT_DIR)/$(d) $(firstword $(LIBA_TARGET_$(d))) $(firstword $(LIBSO_TARGET_$(d))) && set +x; \
+            RETVAL=$$?; \
+            if [ $${RETVAL} != 0 ]; then \
+                exit $${RETVAL}; \
+            fi; \
+        ) \
+    ); \
+    if  [ ! -f $(SYSROOT_LIB)/$(COMP_LIB) ]; then \
+        $(call Info_CompLib,$(COMP_LIB_NAME),$(COMP_LIB_OBJS)); \
+    fi; \
+    $(call Finalize_CompLib,$(COMP_LIB_OBJS),$(SYSROOT_LIB),$(COMP_LIB_NAME)); \
+    fi \
 )
 endef
 else

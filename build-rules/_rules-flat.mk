@@ -11,15 +11,20 @@ $(foreach d, \
 )
 INTERNAL_INCLUDES += $(foreach mod, $(MODULE_NAME) $(HDR_REFS), \
     $(foreach d, \
-        $(shell find $(TOP_DIR)/$(mod)/ -type d -a -name "[^.]*"), \
+        $(shell [ -d $(TOP_DIR)/$(mod) ] && \
+            find -L $(TOP_DIR)/$(mod)/ -type d \
+                -a -name "[^.]*" \
+                -not -path "*.git*"), \
         -I$(d) \
     ) \
 )
-INTERNAL_INCLUDES += \
+
+# INTERNAL_INCLUDES += \
     $(foreach d, \
         $(shell find $(OUTPUT_DIR)/$(MODULE_NAME) -type d -a -name "[^.]*"), \
         -I$(d) \
     )
+
 INTERNAL_INCLUDES := $(strip $(sort $(INTERNAL_INCLUDES)))
 
 EXTERNAL_INCLUDES += $(foreach mod, $(DEPENDS), \
@@ -41,7 +46,9 @@ endif
 CFLAGS  := $(sort $(strip $(CFLAGS)))
 
 LDFLAGS += -L$(SYSROOT_LIB)
+ifeq (y,$(shell [ -d $(IMPORT_VDRDIR)/$(PREBUILT_LIBDIR) ] && echo y))
 LDFLAGS += -L$(IMPORT_VDRDIR)/$(PREBUILT_LIBDIR)
+endif
 
 LDFLAGS += $(foreach d,$(DEPENDS_$(MODULE_NAME)),$(REF_LDFLAGS_$(d)))
 
@@ -77,7 +84,7 @@ clean:
         *.o.e *.d *.o *.a *.so *.log *.gc*
 
 %.o: %.c $(HD_MAKEFILE)
-	$(call Brief_Log,"CC")
+	@$(call Brief_Log,"CC")
 	$(call Inspect_Env,$(WATCHED_VARS))
 	$(Q) \
 	set -o pipefail; \
@@ -97,19 +104,26 @@ NODEP_LIST = \
     $(SYSROOT_INC)/product_config.h \
 
 ifneq (,$(findstring gcc,$(CC)))
+ifeq (,$(filter modinfo,$(MAKECMDGOALS)))
 %.d: %.c
 	$(Q) \
+( \
+	D=$$(dirname $<|$(SED) 's:$(TOP_DIR):$(OUTPUT_DIR):1'); \
+	F=$$(basename $<); \
+	mkdir -p $${D}; \
 	$(CC) -MM -I$(CURDIR) \
 	    $(INTERNAL_INCLUDES) \
 	    $(EXTERNAL_INCLUDES) \
 	    $(CFLAGS) \
-	$< > $@.$$$$ 2>/dev/null; \
-	sed -i 's!$(shell basename $*)\.o[ :]!$*.o:!1' $@.$$$$; \
-	mv $@.$$$$ $@;
+	$< > $${D}/$${F}.$$$$; \
+	$(SED) -i 's!$(shell basename $*)\.o[ :]!$*.o:!1' $${D}/$${F}.$$$$; \
+	mv $${D}/$${F}.$$$$ $@; \
+)
+endif
 endif
 
 %.o: %.cpp
-	$(call Brief_Log,"CC")
+	@$(call Brief_Log,"CC")
 	$(call Inspect_Env,$(WATCHED_VARS))
 	$(Q)$(CXX) -I$(CURDIR) \
 	    $(INTERNAL_INCLUDES) \
@@ -125,8 +139,8 @@ ifneq (,$(findstring gcc,$(CC)))
 	    $(EXTERNAL_INCLUDES) \
 	    $(CFLAGS) \
 	$< > $@.$$$$; \
-	$(foreach D,$(NODEP_LIST),sed -i 's:$(D)::g' $@.$$$$;) \
-	sed 's,\($*\)\.o[ :]*,\1.o $@: ,g' < $@.$$$$ > $@; \
+	$(foreach D,$(NODEP_LIST),$(SED) -i 's:$(D)::g' $@.$$$$;) \
+	$(SED) 's,\($*\)\.o[ :]*,\1.o $@: ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$;
 endif
 
