@@ -30,6 +30,10 @@ vs_build/
 .vs/
 html/
 compile.log
+src/mqtt/Link-MQTT
+src/ota/Link-OTA
+src/system/iotkit-system
+src/cmp/Link-CMP
 CMakeLists.txt.user
 qt_build/
 src/packages/LITE-log/
