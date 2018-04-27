@@ -17,7 +17,7 @@ include(iotx-sdk-version)
 ########################################################################
 # options
 ########################################################################
-option(FEATURE_GIT_CLONE_BEFORE_BUILD     "git clone repos in packages folder when cmake configs"    ON)
+option(FEATURE_GIT_CLONE_BEFORE_BUILD     "git clone repos in packages folder when cmake configs"   OFF)
 option(FEATURE_MQTT_COMM_ENABLED          "MQTT communication enabled or not"                        ON)
 option(FEATURE_MQTT_DIRECT                "MQTT direct connection enabled or not"                    ON)
 option(FEATURE_MQTT_DIRECT_NOTLS          "MQTT direct connection w/o tls enabled or not"           OFF)

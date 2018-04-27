@@ -27,9 +27,7 @@ extern "C" {
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdarg.h>
-
-#define _IN_                /* indicate that this is an input parameter */
-#define _OU_                /* indicate that this is an output parameter */
+#include "iot_import.h"
 
 /**
  * @brief Establish a iTLS connection.
