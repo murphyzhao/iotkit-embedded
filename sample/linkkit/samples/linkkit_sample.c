@@ -451,6 +451,7 @@ int main(int argc, char* argv[])
         default:
             break;
         }
+	}
 #endif
 
     execution_time = execution_time < 1 ? 1 : execution_time;
