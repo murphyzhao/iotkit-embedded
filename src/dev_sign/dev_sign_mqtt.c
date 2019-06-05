@@ -129,6 +129,20 @@ int _iotx_generate_sign_string(const char *device_id, const char *device_name, c
     return SUCCESS_RETURN;
 }
 
+static char* rt_strlwr(char *str)
+{
+    if(str == NULL)
+        return NULL;
+         
+    char *p = str;
+    while (*p != '\0')
+    {
+        if(*p >= 'A' && *p <= 'Z')
+            *p = (*p) + 0x20;
+        p++;
+    }
+    return str;
+}
 int32_t IOT_Sign_MQTT(iotx_mqtt_region_types_t region, iotx_dev_meta_info_t *meta, iotx_sign_mqtt_t *signout)
 {
     uint16_t length = 0;
@@ -182,6 +196,8 @@ int32_t IOT_Sign_MQTT(iotx_mqtt_region_types_t region, iotx_dev_meta_info_t *met
         memcpy(signout->hostname + strlen(signout->hostname), g_infra_mqtt_domain[region],
             strlen(g_infra_mqtt_domain[region]));
     }
+    rt_strlwr(signout->hostname);
+    rt_kprintf("host name:%s\r\n", signout->hostname);
 
     /* setup username */
     length = strlen(meta->device_name) + strlen(meta->product_key) + 2;
